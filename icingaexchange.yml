@@ -1,0 +1,17 @@
+name: check_emc_isilon
+description: 'file:///README.md'
+url: 'https://github.com/l13t/icinga2_check_emc_isilon'
+tags: Storage, EMC, Isilon
+vendor: EMC
+target: Storage
+type: Plugin
+license: gplv3
+releases:
+  - name: 1.0
+    description: First Release
+    files:
+      - name: check_emc_isilon.py
+        url: ''
+        description: First release
+        checksum: 
+

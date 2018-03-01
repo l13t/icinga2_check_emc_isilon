@@ -41,7 +41,8 @@ def check_snmp_access(community, snmp_host):
     errInd, errSt, errIndex, varBindTable = cmdGen.nextCmd(
         cmdgen.CommunityData(community),
         cmdgen.UdpTransportTarget((snmp_host, 161)),
-        snmp_oids['clusterName']
+        snmp_oids['clusterName'],
+        lookupMib=False
     )
     if errInd:
         print('CRITICAL: Indication Error')
@@ -62,7 +63,8 @@ def check_multi_snmp(community, snmp_host, oid):
     errInd, errSt, errIndex, varBindTable = cmdGen.nextCmd(
         cmdgen.CommunityData(community),
         cmdgen.UdpTransportTarget((snmp_host, 161)),
-        oid
+        oid,
+        lookupMib=False
     )
     if errInd:
         print(errInd)
@@ -77,8 +79,7 @@ def check_multi_snmp(community, snmp_host, oid):
         else:
             for varBinds in varBindTable:
                 for name, val in varBinds:
-                    name_num = re.sub(re.compile(oid+"."),
-                                      '', name.prettyPrint())
+                    name_num = re.sub(re.compile(oid+"."), '', name.prettyPrint())
                     result[name_num] = val
             return result
 
@@ -89,7 +90,8 @@ def check_snmp(community, snmp_host, oid):
     errInd, errSt, errIndex, varBindTable = cmdGen.nextCmd(
         cmdgen.CommunityData(community),
         cmdgen.UdpTransportTarget((snmp_host, 161)),
-        oid
+        oid,
+        lookupMib=False
     )
     if errInd:
         print(errInd)
@@ -214,10 +216,11 @@ elif (command == 'check_emc_isilon_diskstatus'):
     disksernum = check_multi_snmp(
         community, ipaddr, snmp_oids['diskSerialNumber'])
     ERROR_CODES = dict()
+    #print(diskbay.keys())
     for i in diskbay.keys():
-        if (diskstat[i] != "HEALTHY"):
-            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serianl Num.: " + str(
-                disksernum[i]) + " | Disk status: " + diskstat[i]
+        if (str(diskstat[i]) != "HEALTHY"):
+            print("'"+ i + "' - '" + diskstat[i] + "'")
+            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serianl Num.: " + str(disksernum[i]) + " | Disk status: " + diskstat[i]
     if (ERROR_CODES == {}):
         print("OK: That's all fine with disk health on node")
         sys.exit(0)
