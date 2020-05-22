@@ -1,35 +1,30 @@
 #!/usr/bin/env python3
 
-import pysnmp
 import argparse
-import sys
 import re
+import sys
 
 from pysnmp.entity.rfc3413.oneliner import cmdgen
 
 __author__ = 'Dmytro Prokhorenkov'
-__version__ = 1.0
+__version__ = 1.1
 
 snmp_oids = {
     'clusterHealth': '1.3.6.1.4.1.12124.1.1.2',
     'clusterName': '1.3.6.1.4.1.12124.1.1.1',
     'configuredNodes': '1.3.6.1.4.1.12124.1.1.5',
-    'onlineNodes': '1.3.6.1.4.1.12124.1.1.6',
-    'nodeName': '1.3.6.1.4.1.12124.2.1.1',
-    'nodeHealth': '1.3.6.1.4.1.12124.2.1.2',
-    'nodeReadOnly': '1.3.6.1.4.1.12124.2.1.4',
     'diskBay': '1.3.6.1.4.1.12124.2.52.1.1',
     'diskDeviceName': '1.3.6.1.4.1.12124.2.52.1.4',
-    'diskStatus': '1.3.6.1.4.1.12124.2.52.1.5',
-    'diskSerialNumber': '1.3.6.1.4.1.12124.2.52.1.7',
     'diskPerfDeviceName': '1.3.6.1.4.1.12124.2.2.52.1.2',
     'diskPerfOpsPerSecond': '1.3.6.1.4.1.12124.2.2.52.1.3',
+    'diskSerialNumber': '1.3.6.1.4.1.12124.2.52.1.7',
+    'diskStatus': '1.3.6.1.4.1.12124.2.52.1.5',
     'ifsTotalBytes': '1.3.6.1.4.1.12124.1.3.1',
     'ifsUsedBytes': '1.3.6.1.4.1.12124.1.3.2',
-    'diskBay': '1.3.6.1.4.1.12124.2.52.1.1',
-    'diskDeviceName': '1.3.6.1.4.1.12124.2.52.1.4',
-    'diskStatus': '1.3.6.1.4.1.12124.2.52.1.5',
-    'diskSerialNumber': '1.3.6.1.4.1.12124.2.52.1.7',
+    'nodeHealth': '1.3.6.1.4.1.12124.2.1.2',
+    'nodeName': '1.3.6.1.4.1.12124.2.1.1',
+    'nodeReadOnly': '1.3.6.1.4.1.12124.2.1.4',
+    'onlineNodes': '1.3.6.1.4.1.12124.1.1.6',
 }
 
 EXIT_STATUS = 0
@@ -45,12 +40,12 @@ def check_snmp_access(community, snmp_host):
         lookupMib=False
     )
     if errInd:
-        print('CRITICAL: Indication Error')
+        print('UNKNOWN: Indication Error')
         res = 1
     else:
         if errSt:
             print('%s at %s' % (errSt.prettyPrint(),
-                                errIndex and varBinds[int(errIndex)] or '?'))
+                                errIndex and varBindTable[int(errIndex)] or '?'))
             res = 1
         else:
             res = 0
@@ -72,8 +67,8 @@ def check_multi_snmp(community, snmp_host, oid):
     else:
         if errSt:
             print('%s at %s' % (
-                errorStatus.prettyPrint(),
-                errorIndex and varBinds[int(errorIndex)-1] or '?'
+                errSt.prettyPrint(),
+                errIndex and varBindTable[int(errIndex)-1] or '?'
             )
             )
         else:
@@ -99,29 +94,35 @@ def check_snmp(community, snmp_host, oid):
     else:
         if errSt:
             print('%s at %s' % (
-                errorStatus.prettyPrint(),
-                errorIndex and varBinds[int(errorIndex)-1] or '?'
+                errSt.prettyPrint(),
+                errIndex and varBindTable[int(errIndex)-1] or '?'
             )
             )
         else:
             # for varBinds in varBindTable:
             varBinds = varBindTable[0]
             for name, val in varBinds:
-                #print('%s = %s' % (name.prettyPrint(), val.prettyPrint()))
+                # print('%s = %s' % (name.prettyPrint(), val.prettyPrint()))
                 result += val.prettyPrint()
             return result
 
 
-parent_parser = argparse.ArgumentParser(add_help=True, description='Utility to check EMC Isilon storage status', epilog='{0}: v.{1} by {2}'.format('check_oom.py', __version__, __author__))
+parent_parser = argparse.ArgumentParser(add_help=True,
+                                        description='Utility to check EMC Isilon storage status',
+                                        epilog='{0}: v.{1} by {2}'.format('check_oom.py', __version__, __author__))
 parent_parser.add_argument('--host', type=str, help="Enter host ip address or domain name")
 parent_parser.add_argument('--comm', type=str, help="SNMP community")
-parent_parser.add_argument('--check', type=str, help='''prefered check: 
+parent_parser.add_argument('--check', type=str, help='''prefered check:
     check_emc_isilon_clusterhealth,
     check_emc_isilon_nodehealth,
     check_emc_isilon_diskusage,
     check_emc_isilon_diskstatus''')
-parent_parser.add_argument('--warn', type=int, help="Exit with WARNING status if less than INTEGER units of disk are free", default=20)
-parent_parser.add_argument('--crit', type=int, help="Exit with CRITICAL status if less than PERCENT of disk space is free", default=10)
+parent_parser.add_argument('--warn', type=int,
+                           help="Exit with WARNING status if less than INTEGER units of disk are free",
+                           default=20)
+parent_parser.add_argument('--crit', type=int,
+                           help="Exit with CRITICAL status if less than PERCENT of disk space is free",
+                           default=10)
 _args = vars(parent_parser.parse_args())
 
 if ((_args['host'] == None) or (_args['comm'] == None) or (_args['check'] == None)):
@@ -193,16 +194,16 @@ elif (command == "check_emc_isilon_diskusage"):
 
     totalBytes = int(check_snmp(community, ipaddr, snmp_oids['ifsTotalBytes']))
     usedbytes = int(check_snmp(community, ipaddr, snmp_oids['ifsUsedBytes']))
-    usage_per = 100.00 - float(usedbytes / totalBytes) * 100.00
+    usage_per = round(100.00 - ((float(usedbytes) / float(totalBytes)) * 100.00), 1)
     if (usage_per > ch_warn):
-        print("OK: There are " + str(usage_per) + " % of free space on cluster")
+        print("OK: There is " + str(usage_per) + "% free space on /isi")
         sys.exit(0)
     else:
         if (usage_per > ch_crit):
-            print("WARNING: Warning with " + str(usage_per) + " % of free space on cluster")
+            print("WARNING: There is " + str(usage_per) + "% free space on /isi")
             sys.exit(1)
         else:
-            print("CRITICAL: Critical with " + str(usage_per) + " % of free space on cluster")
+            print("CRITICAL: there is " + str(usage_per) + "% free space on /isi")
             sys.exit(2)
 elif (command == 'check_emc_isilon_diskstatus'):
 
@@ -216,18 +217,24 @@ elif (command == 'check_emc_isilon_diskstatus'):
     disksernum = check_multi_snmp(
         community, ipaddr, snmp_oids['diskSerialNumber'])
     ERROR_CODES = dict()
-    #print(diskbay.keys())
+    # print(diskbay.keys())
     for i in diskbay.keys():
-        if (str(diskstat[i]) != "HEALTHY"):
-            print("'"+ i + "' - '" + diskstat[i] + "'")
-            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serianl Num.: " + str(disksernum[i]) + " | Disk status: " + diskstat[i]
-    if (ERROR_CODES == {}):
-        print("OK: That's all fine with disk health on node")
+        if ("DEAD" in str(diskstat[i])):
+            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + str(disksernum[i]) + \
+                                      " | Disk status: " + diskstat[i]
+            print("CRITICAL: " + ERROR_CODES[i])
+            sys.exit(2)
+        if ("SMARTFAIL" in str(diskstat[i])):
+            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + str(disksernum[i]) + \
+                                      " | Disk status: " + diskstat[i]
+            print("WARNING: " + ERROR_CODES[i])
+            sys.exit(1)
+        if ("L3" or "HEALTHY" in str(diskstat[i])):
+            print("OK: All disks reported as HEALTHY")
         sys.exit(0)
     else:
-        print("WARNING: There are problems with some drives:")
         for i in ERROR_CODES.keys():
-            print(ERROR_CODES[i])
+            print("UNKNOWN: " + ERROR_CODES[i])
             sys.exit(1)
 else:
     parent_parser.print_help()
