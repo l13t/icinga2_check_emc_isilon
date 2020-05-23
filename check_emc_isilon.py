@@ -7,7 +7,7 @@ import sys
 from pysnmp.entity.rfc3413.oneliner import cmdgen
 
 __author__ = 'Dmytro Prokhorenkov'
-__version__ = 1.1
+__version__ = '1.1.1'
 
 snmp_oids = {
     'clusterHealth': '1.3.6.1.4.1.12124.1.1.2',
@@ -101,44 +101,12 @@ def check_snmp(community, snmp_host, oid):
         else:
             # for varBinds in varBindTable:
             varBinds = varBindTable[0]
-            for name, val in varBinds:
-                # print('%s = %s' % (name.prettyPrint(), val.prettyPrint()))
+            for _, val in varBinds:
                 result += val.prettyPrint()
             return result
 
 
-parent_parser = argparse.ArgumentParser(add_help=True,
-                                        description='Utility to check EMC Isilon storage status',
-                                        epilog='{0}: v.{1} by {2}'.format('check_oom.py', __version__, __author__))
-parent_parser.add_argument('--host', type=str, help="Enter host ip address or domain name")
-parent_parser.add_argument('--comm', type=str, help="SNMP community")
-parent_parser.add_argument('--check', type=str, help='''prefered check:
-    check_emc_isilon_clusterhealth,
-    check_emc_isilon_nodehealth,
-    check_emc_isilon_diskusage,
-    check_emc_isilon_diskstatus''')
-parent_parser.add_argument('--warn', type=int,
-                           help="Exit with WARNING status if less than INTEGER units of disk are free",
-                           default=20)
-parent_parser.add_argument('--crit', type=int,
-                           help="Exit with CRITICAL status if less than PERCENT of disk space is free",
-                           default=10)
-_args = vars(parent_parser.parse_args())
-
-if ((_args['host'] == None) or (_args['comm'] == None) or (_args['check'] == None)):
-    parent_parser.print_help()
-    sys.exit(0)
-
-
-ipaddr = _args['host']
-community = _args['comm']
-command = _args['check']
-
-if (command == 'check_emc_isilon_clusterhealth'):
-
-    if check_snmp_access(community, ipaddr) != 0:
-        sys.exit(2)
-
+def check_emc_isilon_clusterhealth(ipaddr, community):
     ch_status = check_snmp(community, ipaddr, snmp_oids['clusterHealth'])
     cl_name = check_snmp(community, ipaddr, snmp_oids['clusterName'])
     cl_conf_nodes = check_snmp(community, ipaddr, snmp_oids['configuredNodes'])
@@ -147,7 +115,8 @@ if (command == 'check_emc_isilon_clusterhealth'):
         print("OK: Cluster '" + cl_name + "' status is fine. Online " + cl_online_nodes + " of " + cl_conf_nodes)
         EXIT_STATUS = 0
     elif (ch_status == '1'):
-        print("CRITICAL: Cluster '" + cl_name + "' is in ATTN mode. Online " + cl_online_nodes + " of " + cl_conf_nodes)
+        print("CRITICAL: Cluster '" + cl_name + "' is in ATTN mode. Online " +
+              cl_online_nodes + " of " + cl_conf_nodes)
         EXIT_STATUS = 2
     elif (ch_status == '2'):
         print("CRITICAL: Cluster '" + cl_name + "' is DOWN")
@@ -159,11 +128,9 @@ if (command == 'check_emc_isilon_clusterhealth'):
         print("UNKNOWN: Error with checking cluster")
         EXIT_STATUS = 3
     sys.exit(EXIT_STATUS)
-elif (command == "check_emc_isilon_nodehealth"):
 
-    if check_snmp_access(community, ipaddr) != 0:
-        sys.exit(2)
 
+def check_emc_isilon_nodehealth(ipaddr, community):
     ch_status = check_snmp(community, ipaddr, snmp_oids['nodeHealth'])
     node_name = check_snmp(community, ipaddr, snmp_oids['nodeName'])
     node_ro = check_snmp(community, ipaddr, snmp_oids['nodeReadOnly'])
@@ -183,58 +150,101 @@ elif (command == "check_emc_isilon_nodehealth"):
         print("UNKNOWN: Error with checking node")
         EXIT_STATUS = 3
     sys.exit(EXIT_STATUS)
-elif (command == "check_emc_isilon_diskusage"):
 
-    if check_snmp_access(community, ipaddr) != 0:
-        sys.exit(2)
 
-    ch_warn = _args['warn']
-
-    ch_crit = _args['crit']
-
+def check_emc_isilon_diskusage(ipaddr, community, ch_warn, ch_crit):
     totalBytes = int(check_snmp(community, ipaddr, snmp_oids['ifsTotalBytes']))
     usedbytes = int(check_snmp(community, ipaddr, snmp_oids['ifsUsedBytes']))
     usage_per = round(100.00 - ((float(usedbytes) / float(totalBytes)) * 100.00), 1)
     if (usage_per > ch_warn):
-        print("OK: There is " + str(usage_per) + "% free space on /isi")
+        print("OK: There is " + str(usage_per) + "% free space  left on device")
         sys.exit(0)
     else:
         if (usage_per > ch_crit):
-            print("WARNING: There is " + str(usage_per) + "% free space on /isi")
+            print("WARNING: There is " + str(usage_per) + "% free space left on device")
             sys.exit(1)
         else:
-            print("CRITICAL: there is " + str(usage_per) + "% free space on /isi")
+            print("CRITICAL: There is " + str(usage_per) + "% free space left on device")
             sys.exit(2)
-elif (command == 'check_emc_isilon_diskstatus'):
 
-    if check_snmp_access(community, ipaddr) != 0:
-        sys.exit(2)
 
+def check_emc_isilon_diskstatus(ipaddr, community):
     diskbay = check_multi_snmp(community, ipaddr, snmp_oids['diskBay'])
-    diskdevname = check_multi_snmp(
-        community, ipaddr, snmp_oids['diskDeviceName'])
+    # diskdevname = check_multi_snmp(community, ipaddr, snmp_oids['diskDeviceName'])
     diskstat = check_multi_snmp(community, ipaddr, snmp_oids['diskStatus'])
     disksernum = check_multi_snmp(
         community, ipaddr, snmp_oids['diskSerialNumber'])
     ERROR_CODES = dict()
-    # print(diskbay.keys())
     for i in diskbay.keys():
         if ("DEAD" in str(diskstat[i])):
-            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + str(disksernum[i]) + \
-                                      " | Disk status: " + diskstat[i]
-            print("CRITICAL: " + ERROR_CODES[i])
-            sys.exit(2)
+            ERROR_CODES['CRITICAL'][diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + \
+                str(disksernum[i]) + " | Disk status: " + diskstat[i]
         if ("SMARTFAIL" in str(diskstat[i])):
-            ERROR_CODES[diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + str(disksernum[i]) + \
-                                      " | Disk status: " + diskstat[i]
-            print("WARNING: " + ERROR_CODES[i])
-            sys.exit(1)
+            ERROR_CODES['WARNING'][diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + \
+                str(disksernum[i]) + " | Disk status: " + diskstat[i]
         if ("L3" or "HEALTHY" in str(diskstat[i])):
-            print("OK: All disks reported as HEALTHY")
+            ERROR_CODES['OK'][diskbay[i]] = "Bay " + str(diskbay[i]) + " | Serial Num.: " + \
+                str(disksernum[i]) + " | Disk status: " + diskstat[i]
+    if (ERROR_CODES == {}):
+        print("OK: That's all fine with disk health on node")
         sys.exit(0)
     else:
-        for i in ERROR_CODES.keys():
-            print("UNKNOWN: " + ERROR_CODES[i])
+        if (ERROR_CODES['CRITICAL'] != {}):
+            print("CRITICAL: There are critical problems with your storage:\n")
+            for i in ERROR_CODES['CRITICAL'].keys():
+                print(ERROR_CODES['CRITICAL'][i])
+            sys.exit(2)
+        else:
+            print("WARNING: There are warnings in state of your storage:\n")
+            for i in ERROR_CODES['WARNING'].keys():
+                print(ERROR_CODES['WARNING'][i])
             sys.exit(1)
-else:
-    parent_parser.print_help()
+
+
+def main():
+    parent_parser = argparse.ArgumentParser(add_help=True,
+                                            description='Utility to check EMC Isilon storage status',
+                                            epilog='{0}: v{1} by {2}'.format('check_emc_isilon.py', __version__,
+                                                                             __author__))
+    parent_parser.add_argument('--host', type=str, help="Enter host ip address or domain name", required=True)
+    parent_parser.add_argument('--comm', type=str, help="SNMP community", required=True)
+    parent_parser.add_argument('--check', type=str,
+                               choices=[
+                                        'check_emc_isilon_clusterhealth',
+                                        'check_emc_isilon_nodehealth',
+                                        'check_emc_isilon_diskusage',
+                                        'check_emc_isilon_diskstatus'
+                               ],
+                               help="List of checks provided by this plugin",
+                               required=True)
+    parent_parser.add_argument('--warn', type=int,
+                               help="Exit with WARNING status if less than PERCENT of disk space is free",
+                               default=20)
+    parent_parser.add_argument('--crit', type=int,
+                               help="Exit with CRITICAL status if less than PERCENT of disk space is free",
+                               default=10)
+    _args = vars(parent_parser.parse_args())
+
+    ipaddr = _args['host']
+    community = _args['comm']
+    command = _args['check']
+
+    if check_snmp_access(community, ipaddr) != 0:
+        print("CRITICAL: Problems with connecting to device with SNMP")
+        sys.exit(2)
+
+    if (command == 'check_emc_isilon_clusterhealth'):
+        check_emc_isilon_clusterhealth(ipaddr, community)
+
+    elif (command == "check_emc_isilon_nodehealth"):
+        check_emc_isilon_nodehealth(ipaddr, community)
+
+    elif (command == "check_emc_isilon_diskusage"):
+        check_emc_isilon_diskusage(ipaddr, community, _args['warn'], _args['crit'])
+
+    elif (command == 'check_emc_isilon_diskstatus'):
+        check_emc_isilon_diskstatus(ipaddr, community)
+
+
+if __name__ == "__main__":
+    main()
